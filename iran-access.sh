@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #================================================================
-# Firewall Manager Script for Ubuntu
+# Firewall Manager Script for Ubuntu (v2 - Revised)
 # Author: Gemini
 # Description: Manages iptables rules to restrict access based on an IP whitelist.
 #================================================================
@@ -11,8 +11,8 @@ CONFIG_DIR="/etc/firewall_manager"
 BACKUP_FILE="$CONFIG_DIR/iptables-backup.rules"
 WHITELIST_FILE="$CONFIG_DIR/firewall.txt"
 IPSET_NAME="whitelist_set"
-# --- MODIFIED: URL now points to your GitHub repository ---
-IRAN_IP_LIST_URL="https://raw.githubusercontent.com/Argo160/IranAccess/main/firewall.txt"
+# --- URL points to your GitHub repository ---
+IP_LIST_URL="https://raw.githubusercontent.com/Argo160/IranAccess/main/firewall.txt"
 
 # --- Colors ---
 GREEN='\033[0;32m'
@@ -22,7 +22,6 @@ NC='\033[0m' # No Color
 
 # --- Functions ---
 
-# Function to check for root privileges
 check_root() {
     if [ "$(id -u)" -ne 0 ]; then
         echo -e "${RED}خطا: این اسکریپت باید با دسترسی root اجرا شود. (sudo ./firewall_manager.sh)${NC}"
@@ -30,22 +29,18 @@ check_root() {
     fi
 }
 
-# Function to install necessary packages
 install_dependencies() {
     echo -e "${YELLOW}بررسی و نصب بسته‌های مورد نیاز (iptables, ipset, iptables-persistent)...${NC}"
-    # Pre-configure debconf to avoid interactive prompts during installation
     echo "iptables-persistent iptables-persistent/autosave_v4 boolean true" | debconf-set-selections
     echo "iptables-persistent iptables-persistent/autosave_v6 boolean true" | debconf-set-selections
-    
     apt-get update >/dev/null 2>&1
     apt-get install -y iptables ipset iptables-persistent >/dev/null 2>&1
     echo -e "${GREEN}بسته‌های مورد نیاز با موفقیت نصب شدند.${NC}"
 }
 
-# Function to download the IP list from your GitHub
 download_ip_list() {
     echo -e "${YELLOW}در حال دانلود لیست IP از گیت‌هاب شما...${NC}"
-    if curl -s -o "$WHITELIST_FILE" "$IRAN_IP_LIST_URL"; then
+    if curl -s -o "$WHITELIST_FILE" "$IP_LIST_URL"; then
         echo -e "${GREEN}لیست IP با موفقیت در فایل $WHITELIST_FILE ذخیره شد.${NC}"
     else
         echo -e "${RED}خطا در دانلود لیست IP ها. لطفاً از درستی آدرس گیت‌هاب و اتصال اینترنت خود مطمئن شوید.${NC}"
@@ -53,20 +48,14 @@ download_ip_list() {
     fi
 }
 
-# Function to activate the firewall rules
 activate_rules() {
     echo -e "${YELLOW}شروع فرآیند فعال‌سازی قوانین فایروال...${NC}"
 
-    # Ask for SSH port
     read -p "لطفاً پورت SSH خود را وارد کنید (پیش‌فرض: 22): " user_ssh_port
-    # Use user input if provided, otherwise default to 22
     local SSH_PORT=${user_ssh_port:-22}
     echo -e "${YELLOW}پورت SSH روی $SSH_PORT تنظیم شد.${NC}"
 
-    # 1. Install dependencies
     install_dependencies
-
-    # 2. Create directory and backup
     mkdir -p "$CONFIG_DIR"
     if [ ! -f "$BACKUP_FILE" ]; then
         echo "در حال ایجاد نسخه پشتیبان از قوانین فعلی فایروال..."
@@ -74,113 +63,130 @@ activate_rules() {
         echo -e "${GREEN}پشتیبان‌گیری در $BACKUP_FILE انجام شد.${NC}"
     fi
 
-    # 3. Check for whitelist file
     if [ ! -f "$WHITELIST_FILE" ]; then
         echo -e "${YELLOW}فایل $WHITELIST_FILE یافت نشد.${NC}"
         read -p "آیا مایلید لیست IP ها از گیت‌هاب شما دانلود شود؟ (y/n): " choice
         if [[ "$choice" == "y" || "$choice" == "Y" ]]; then
             download_ip_list
         else
-            echo -e "${RED}فعال‌سازی لغو شد. لطفاً فایل firewall.txt را در مسیر $CONFIG_DIR قرار دهید.${NC}"
+            echo -e "${RED}فعال‌سازی لغو شد.${NC}"
             return
         fi
     fi
 
-    # 4. Flush old rules and destroy old ipset
     echo "پاک کردن قوانین قدیمی..."
     iptables -F
     iptables -X
     ipset destroy "$IPSET_NAME" >/dev/null 2>&1
 
-    # 5. Create new ipset and add IPs
     echo "ایجاد IPSet جدید و افزودن IP ها از فایل..."
     ipset create "$IPSET_NAME" hash:net
     while read -r line; do
-        # Ignore comments and empty lines
         if [[ ! "$line" =~ ^# && -n "$line" ]]; then
             ipset add "$IPSET_NAME" "$line"
         fi
     done < "$WHITELIST_FILE"
 
-    # 6. Apply new iptables rules
     echo "اعمال قوانین جدید فایروال..."
-    # Allow loopback
     iptables -A INPUT -i lo -j ACCEPT
-    # Allow established and related connections
     iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-    # Allow SSH
     iptables -A INPUT -p tcp --dport "$SSH_PORT" -j ACCEPT
-    # Allow traffic from our whitelist
     iptables -A INPUT -m set --match-set "$IPSET_NAME" src -j ACCEPT
-    # Set default policy to DROP
     iptables -P INPUT DROP
     iptables -P FORWARD DROP
-    iptables -P OUTPUT ACCEPT # Allow outgoing traffic
+    iptables -P OUTPUT ACCEPT
 
-    # 7. Make rules persistent
     echo "ذخیره قوانین برای دائمی شدن پس از ریبوت..."
     iptables-save > /etc/iptables/rules.v4
 
     echo -e "${GREEN}✅ قوانین فایروال با موفقیت فعال و دائمی شدند.${NC}"
-    echo -e "${YELLOW}دسترسی به سرور اکنون فقط برای IP های موجود در لیست سفید امکان‌پذیر است.${NC}"
 }
 
-# Function to deactivate firewall rules and restore from backup
+# --- REVISED AND IMPROVED FUNCTION ---
 deactivate_rules() {
-    echo -e "${YELLOW}شروع فرآیند غیرفعال‌سازی قوانین...${NC}"
+    echo -e "${YELLOW}شروع فرآیند غیرفعال‌سازی و بازگردانی فایروال...${NC}"
+
+    echo "1. پاک کردن تمام قوانین فعلی و تنظیم پالیسی پیش‌فرض به ACCEPT..."
+    iptables -F
+    iptables -X
+    iptables -t nat -F
+    iptables -t nat -X
+    iptables -t mangle -F
+    iptables -t mangle -X
+    iptables -P INPUT ACCEPT
+    iptables -P FORWARD ACCEPT
+    iptables -P OUTPUT ACCEPT
+
+    echo "2. حذف ipset..."
+    ipset destroy "$IPSET_NAME" >/dev/null 2>&1
+
     if [ -f "$BACKUP_FILE" ]; then
+        echo "3. بازیابی قوانین از فایل پشتیبان..."
         iptables-restore < "$BACKUP_FILE"
-        iptables-save > /etc/iptables/rules.v4
-        ipset destroy "$IPSET_NAME" >/dev/null 2>&1
-        echo -e "${GREEN}✅ قوانین فایروال با موفقیت از نسخه پشتیبان بازیابی و دائمی شدند.${NC}"
+        echo -e "${GREEN}قوانین با موفقیت از نسخه پشتیبان بازیابی شدند.${NC}"
     else
-        echo -e "${RED}فایل پشتیبان ($BACKUP_FILE) یافت نشد. به صورت دستی قوانین را به حالت پیش‌فرض برمی‌گردانیم.${NC}"
-        iptables -F
-        iptables -P INPUT ACCEPT
-        iptables -P FORWARD ACCEPT
-        iptables -P OUTPUT ACCEPT
-        iptables-save > /etc/iptables/rules.v4
-        echo -e "${GREEN}✅ تمامی قوانین حذف شدند و پالیسی‌ها به ACCEPT تغییر یافتند.${NC}"
+        echo -e "${YELLOW}3. فایل پشتیبان یافت نشد. فایروال در حالت باز (ACCEPT) باقی می‌ماند.${NC}"
     fi
+
+    echo "4. ذخیره کردن وضعیت فعلی برای دائمی شدن..."
+    iptables-save > /etc/iptables/rules.v4
+
+    echo -e "${GREEN}✅ فرآیند غیرفعال‌سازی تکمیل شد.${NC}"
 }
 
-# Function to add a custom IP to the whitelist
+# --- REVISED AND IMPROVED FUNCTION ---
 add_ip() {
+    if ! ipset list "$IPSET_NAME" >/dev/null 2>&1; then
+        echo -e "${RED}خطا: به نظر می‌رسد قوانین فایروال (و ipset) فعال نیستند. ابتدا گزینه 1 را اجرا کنید.${NC}"
+        return
+    fi
+
     read -p "لطفاً IP یا رنج CIDR مورد نظر برای افزودن را وارد کنید: " custom_ip
     if [[ -z "$custom_ip" ]]; then
         echo -e "${RED}ورودی نامعتبر است.${NC}"
         return
     fi
 
-    # Add to running ipset
-    if ipset add "$IPSET_NAME" "$custom_ip"; then
-        # Add to the whitelist file for persistence
+    ipset add "$IPSET_NAME" "$custom_ip"
+    
+    if ipset test "$IPSET_NAME" "$custom_ip" >/dev/null 2>&1; then
         echo "$custom_ip" >> "$WHITELIST_FILE"
-        echo -e "${GREEN}✅ آی‌پی $custom_ip با موفقیت به لیست سفید اضافه شد.${NC}"
+        echo -e "${GREEN}✅ آی‌پی $custom_ip با موفقیت به لیست سفید در حال اجرا اضافه شد و در فایل ذخیره گردید.${NC}"
     else
-        echo -e "${RED}خطا در افزودن IP. آیا قوانین فعال هستند و IP معتبر است؟${NC}"
+        echo -e "${RED}خطا در افزودن IP به ipset. لطفاً از فرمت صحیح IP/CIDR مطمئن شوید.${NC}"
     fi
 }
 
-# Function to remove a custom IP from the whitelist
+# --- REVISED AND IMPROVED FUNCTION ---
 remove_ip() {
+    if ! ipset list "$IPSET_NAME" >/dev/null 2>&1; then
+        echo -e "${RED}خطا: به نظر می‌رسد قوانین فایروال (و ipset) فعال نیستند.${NC}"
+        return
+    fi
+
     read -p "لطفاً IP یا رنج CIDR مورد نظر برای حذف را وارد کنید: " custom_ip
     if [[ -z "$custom_ip" ]]; then
         echo -e "${RED}ورودی نامعتبر است.${NC}"
         return
     fi
 
-    # Remove from running ipset
-    if ipset del "$IPSET_NAME" "$custom_ip"; then
-        # Remove from the whitelist file
+    if ! ipset test "$IPSET_NAME" "$custom_ip" >/dev/null 2>&1; then
+        echo -e "${YELLOW}هشدار: آی‌پی $custom_ip از قبل در لیست سفید وجود ندارد.${NC}"
+        # Attempt to remove from file just in case they are out of sync
+        sed -i.bak "/^${custom_ip//\//\\/}$/d" "$WHITELIST_FILE"
+        return
+    fi
+
+    ipset del "$IPSET_NAME" "$custom_ip"
+
+    if ! ipset test "$IPSET_NAME" "$custom_ip" >/dev/null 2>&1; then
         sed -i "/^${custom_ip//\//\\/}$/d" "$WHITELIST_FILE"
-        echo -e "${GREEN}✅ آی‌پی $custom_ip با موفقیت از لیست سفید حذف شد.${NC}"
+        echo -e "${GREEN}✅ آی‌پی $custom_ip با موفقیت از لیست سفید در حال اجرا و از فایل حذف شد.${NC}"
     else
-        echo -e "${RED}خطا در حذف IP. آیا IP در لیست وجود دارد؟${NC}"
+        echo -e "${RED}خطا در حذف IP از ipset در حال اجرا.${NC}"
     fi
 }
 
-# Function to completely uninstall and clean up
 uninstall() {
     echo -e "${RED}!!! هشدار !!!${NC}"
     echo "این گزینه تمام قوانین فایروال را غیرفعال کرده، دایرکتوری کانفیگ ($CONFIG_DIR) را حذف می‌کند."
@@ -189,13 +195,11 @@ uninstall() {
         deactivate_rules
         rm -rf "$CONFIG_DIR"
         echo -e "${GREEN}اسکریپت و تنظیمات آن با موفقیت حذف شدند.${NC}"
-        echo -e "${YELLOW}بسته‌های نصب شده (iptables, ipset) حذف نشدند. در صورت نیاز می‌توانید آنها را به صورت دستی حذف کنید.${NC}"
     else
         echo "عملیات حذف لغو شد."
     fi
 }
 
-# Function to display the menu
 show_menu() {
     echo ""
     echo "==================================="
@@ -218,27 +222,12 @@ while true; do
     read -p "لطفاً گزینه مورد نظر را انتخاب کنید [1-6]: " choice
 
     case $choice in
-        1)
-            activate_rules
-            ;;
-        2)
-            deactivate_rules
-            ;;
-        3)
-            add_ip
-            ;;
-        4)
-            remove_ip
-            ;;
-        5)
-            uninstall
-            ;;
-        6)
-            echo "خروج از برنامه."
-            exit 0
-            ;;
-        *)
-            echo -e "${RED}گزینه نامعتبر است. لطفاً عددی بین 1 تا 6 وارد کنید.${NC}"
-            ;;
+        1) activate_rules ;;
+        2) deactivate_rules ;;
+        3) add_ip ;;
+        4) remove_ip ;;
+        5) uninstall ;;
+        6) echo "خروج از برنامه."; exit 0 ;;
+        *) echo -e "${RED}گزینه نامعتبر است. لطفاً عددی بین 1 تا 6 وارد کنید.${NC}" ;;
     esac
 done
