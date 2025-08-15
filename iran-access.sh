@@ -11,7 +11,8 @@ CONFIG_DIR="/etc/firewall_manager"
 BACKUP_FILE="$CONFIG_DIR/iptables-backup.rules"
 WHITELIST_FILE="$CONFIG_DIR/firewall.txt"
 IPSET_NAME="whitelist_set"
-IRAN_IP_LIST_URL="https://raw.githubusercontent.com/herrbischoff/country-ip-blocks/master/ipv4/ir.cidr"
+# --- MODIFIED: URL now points to your GitHub repository ---
+IRAN_IP_LIST_URL="https://raw.githubusercontent.com/Argo160/IranAccess/main/firewall.txt"
 
 # --- Colors ---
 GREEN='\033[0;32m'
@@ -41,13 +42,13 @@ install_dependencies() {
     echo -e "${GREEN}بسته‌های مورد نیاز با موفقیت نصب شدند.${NC}"
 }
 
-# Function to download the Iran IP list
-download_iran_ips() {
-    echo -e "${YELLOW}در حال دانلود لیست IP های ایران...${NC}"
+# Function to download the IP list from your GitHub
+download_ip_list() {
+    echo -e "${YELLOW}در حال دانلود لیست IP از گیت‌هاب شما...${NC}"
     if curl -s -o "$WHITELIST_FILE" "$IRAN_IP_LIST_URL"; then
-        echo -e "${GREEN}لیست IP های ایران با موفقیت در فایل $WHITELIST_FILE ذخیره شد.${NC}"
+        echo -e "${GREEN}لیست IP با موفقیت در فایل $WHITELIST_FILE ذخیره شد.${NC}"
     else
-        echo -e "${RED}خطا در دانلود لیست IP ها. لطفاً از اتصال اینترنت خود مطمئن شوید و یا فایل firewall.txt را به صورت دستی در مسیر $CONFIG_DIR قرار دهید.${NC}"
+        echo -e "${RED}خطا در دانلود لیست IP ها. لطفاً از درستی آدرس گیت‌هاب و اتصال اینترنت خود مطمئن شوید.${NC}"
         exit 1
     fi
 }
@@ -56,12 +57,11 @@ download_iran_ips() {
 activate_rules() {
     echo -e "${YELLOW}شروع فرآیند فعال‌سازی قوانین فایروال...${NC}"
 
-    # --- NEW: Ask for SSH port ---
+    # Ask for SSH port
     read -p "لطفاً پورت SSH خود را وارد کنید (پیش‌فرض: 22): " user_ssh_port
     # Use user input if provided, otherwise default to 22
     local SSH_PORT=${user_ssh_port:-22}
     echo -e "${YELLOW}پورت SSH روی $SSH_PORT تنظیم شد.${NC}"
-    # --- END NEW ---
 
     # 1. Install dependencies
     install_dependencies
@@ -77,9 +77,9 @@ activate_rules() {
     # 3. Check for whitelist file
     if [ ! -f "$WHITELIST_FILE" ]; then
         echo -e "${YELLOW}فایل $WHITELIST_FILE یافت نشد.${NC}"
-        read -p "آیا مایلید لیست IP های ایران به صورت خودکار دانلود شود؟ (y/n): " choice
+        read -p "آیا مایلید لیست IP ها از گیت‌هاب شما دانلود شود؟ (y/n): " choice
         if [[ "$choice" == "y" || "$choice" == "Y" ]]; then
-            download_iran_ips
+            download_ip_list
         else
             echo -e "${RED}فعال‌سازی لغو شد. لطفاً فایل firewall.txt را در مسیر $CONFIG_DIR قرار دهید.${NC}"
             return
@@ -96,7 +96,10 @@ activate_rules() {
     echo "ایجاد IPSet جدید و افزودن IP ها از فایل..."
     ipset create "$IPSET_NAME" hash:net
     while read -r line; do
-        ipset add "$IPSET_NAME" "$line"
+        # Ignore comments and empty lines
+        if [[ ! "$line" =~ ^# && -n "$line" ]]; then
+            ipset add "$IPSET_NAME" "$line"
+        fi
     done < "$WHITELIST_FILE"
 
     # 6. Apply new iptables rules
