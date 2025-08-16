@@ -30,12 +30,12 @@ check_root() {
 }
 
 install_dependencies() {
-    echo -e "${YELLOW}بررسی و نصب بسته‌های مورد نیاز (iptables, ipset, iptables-persistent)...${NC}"
+    echo -e "${YELLOW}بررسی و نصب بسته‌ های مورد نیاز (iptables, ipset, iptables-persistent)...${NC}"
     echo "iptables-persistent iptables-persistent/autosave_v4 boolean true" | debconf-set-selections
     echo "iptables-persistent iptables-persistent/autosave_v6 boolean true" | debconf-set-selections
     apt-get update >/dev/null 2>&1
     apt-get install -y iptables ipset iptables-persistent >/dev/null 2>&1
-    echo -e "${GREEN}بسته‌های مورد نیاز با موفقیت نصب شدند.${NC}"
+    echo -e "${GREEN}بسته‌ های مورد نیاز با موفقیت نصب شدند.${NC}"
 }
 
 download_ip_list() {
