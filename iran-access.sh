@@ -218,7 +218,6 @@ show_menu() {
 check_root
 
 while true; do
-    clear
     show_menu
     read -p "لطفاً گزینه مورد نظر را انتخاب کنید [1-6]: " choice
 
